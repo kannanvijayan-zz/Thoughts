@@ -50,10 +50,9 @@ The surface level reasons are easy to identify:
       bottlenecks, and made almost all syntax errors lazy as a result.
 
 2. Scoping information
-    - JS engines often need to know how a variable is used by an inner
-      function to decide where to allocate the variable.  This requires
-      the parser to scan inner functions before it can generate an outer
-      function's bytecode.
+    - JS engines need to know how a variable is used by an inner function to
+      decide where to allocate the variable.  This requires the parser to scan
+      inner functions before it can generate an outer function's bytecode.
 
 These seem like two separate problems, but really they are the same
 performance problem: they force the parser to scan code it's not about to
@@ -70,8 +69,8 @@ as being appropriate for the js/web ecosystem:
 
 1. Preserve the basic syntax-oriented nature of Javascript.
 2. Keep semantics as close to identical as possible with plaintext JS.
-3. Keep new syntax as small (when compressed) as existing minified JS.
-4. Minimize the cost of parsing when parsing must occur.
+3. Keep the format as small (when compressed) as existing minified JS.
+4. Maximize parsing speed when parsing must occur.
 5. Define a semantics-preserving map between text js and binary js.
 
 ## Syntax proposal
@@ -86,24 +85,26 @@ it relates to the goals described above.
 
 Javascript is fundamentally a source-based language, with its semantics
 defined in terms of a grammar production for a source file.  Introducing
-a new source format presents the problem of defining a semantics that maps
-to it, as well as a way for developers to map their familiar plaintext
-JS code to and from BinaryJS code.
+a new source format presents the problem of defining the semantics it maps
+to, as well as a way for developers to translate their familiar plaintext
+JS code to and from the new format.
 
 BinaryJS solves that problem by encoding an AST that can be transformed
 back to Javascript source code.  We can design an AST for Javascript that
-is guaranteed to map to and from plaintext JS.  This allows us to simply
-specify that the semantics of a well-formed BinaryJS file is simply the
-regular semantics of the corresponding plaintext JS.
+is guaranteed to map to and from plaintext JS.  This allows us to specify
+the semantics of a well-formed BinaryJS file as simply the regular semantics
+of the corresponding plaintext JS.
 
 This reduces the spec burden considerably, as the BinaryJS spec can restrict
 itself to identifying how its files are structured and how those files map
 to plaintext JS.
 
 We additionally encode the AST with a pre-order traversal, and prefix the
-encoding of each subtree with an integer denoting the encoded-byte-length of
-the subtree.  This allows a parser to skip past an entire AST subtree by
-simply adjusting the read pointer ahead by the encoded-byte-length.
+encoding of each subtree with the encoded-byte-length of the subtree.  This
+allows a parser to skip past an entire AST subtree by simply adjusting the
+read pointer ahead by the encoded-byte-length.  This ability is expected
+to be used with function AST nodes - to let the parser skip entire
+functions without looking at their internals.
 
 Key takeaways for a binary-encoded AST:
 1. Easy to transform to and from plaintext JS.
@@ -133,15 +134,12 @@ relates to malformed files: all syntactically corrext plaintext Javascript
 source translates cleanly into BinaryJS source with the same execution
 semantics.
 
-There is no translation from syntactically incorrect plaintext JS to BinaryJS.
-This 
-
 Key takeaways for lazy syntax errors:
 1. All syntax errors in BinaryJS are treated as lazy.
 2. The function directly containing the error will always throw when called.
 3. Source without syntax errors behaves like corresponding plaintext JS.
 
-## Design Feature 3: Predeclare scoping-related information
+## Design Feature 3: Predeclare scope-related information
 
 There's yet another reason that Javascript parsers are forced to scan inner
 functions, and it has to do with variable scoping.  When variables are
@@ -175,8 +173,8 @@ has no idea how many unique names there exist in a source file, or where
 they occur, so it must use a hashtable lookup using a string key to map
 parse-time identifiers to VM strings.
 
-The BinaryJS constant table turns all names in the source code into
-integers.  This means lookup of a name is always a single array read -
+The BinaryJS constant table turns all identifiers in the source code into
+integers.  This means lookup of an identifier is always a single array lookup:
 no string hashing and no hashtable probing.  Furthermore, comparison
 between names during parse becomes a blind integer comparison, with
 no interning cost incurred.
@@ -198,8 +196,7 @@ implementors the opportunity to build a parser that generates bytecode
 in a single pass, as it scans the source.
 
 In BinaryJS, we have basically pre-generated the relevant AST with book-keeping
-information and serialized it.  A BinaryJS parser needs only walk the
-pre-built AST and generate bytecode for it.
+information and serialized it.
 
 ## Summary
 
