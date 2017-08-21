@@ -1,10 +1,12 @@
 
-# BinaryJS - Motivations and Design - Part 1
+# Binary AST - Motivations and Design - Part 1
 
-The BinaryJS proposal recently cleared Stage 1 of the TC39 standards committee.
-BinaryJS is a proposal for specifying a binary-encoded syntax for
+The Binary AST proposal recently cleared Stage 1 of the TC39 standards committee.
+Binary AST is a proposal for specifying a binary-encoded syntax for
 JS with the intent of allowing browsers and other JS-executing environments
 to parse and load code much faster.
+
+David Teller posted a Binary AST newsletter introducing the broad proposal.
 
 While the final byte-level format has yet to be fully nailed down, we have
 arrived at a prototype design, and a set of design requirements for a final
@@ -13,130 +15,102 @@ the prototype.  The prototype shows potential performance gains of 80% in
 parsing code as compared to minified JS.
 
 For the next stage of the standards process, we are working towards a
-production implementation along with a supporting website (Facebook home page)
-that demonstrates the claimed performance gains.
+fleshed out spec as well as a production implementation and supporting
+website (Facebook home page) that demonstrates the claimed performance gains.
 
 This is one of a series of articles detailing the motivation behind
-the technical design choices in the BinaryJS proposal.  This article should
+the technical design choices in the Binary AST proposal.  This article should
 be understandable to moderately experienced web developers with passing
-familiarity of some compiler internal concepts (parse trees, etc.).
+familiarity of some compiler concepts (e.g. parse trees).
 
 ## The Problem
 
-The BinaryJS project was initiated between Mozilla and Facebook in response
-to parse times becoming a bottleneck for page load.  Facebook in particular
-had been feeling the pinch of parsing 7MB of JS to load their front page,
-leading to parse times of hundreds of millisends, even on moderately powerful
-machines.
+David' opening newsletter post covers the problem in detail:
+[https://yoric.github.io/post/binary-ast-newsletter-1].
 
-For web pages that ship a lot of JS, or for large applications deployed
-on the web, parse times are becoming a direct UX bottleneck, on top of
-the power resources used (especially on mobile devices).
+Our goal is design a source format that allows for fast parsing.  To do so
+effectively, we must first understand why JS parsing is currently slow.
+Specifically, the "What if we just made the parser faster?" section in
+David's article details a number of reasons why parsing JS is time consuming.
 
-Note that this is a problem of-its-time.  We are running into this problem
-now because the development of the JS ecosystem has reached a point where
-codebase sizes are making parse times a more noticeable and painful
-bottleneck.  A pragmatic need for faster parsing has arised now that
-top-site JS payloads are starting to approach 10MB.
+While there are a lot of reasons listed there, there's actually a much
+simpler and more fundamental way to restate the issue behind all of them:
 
-The goal of BinaryJS is to improve page load times for web pages which
-ship large amounts of javascript.  In doing so, we hope to improve load
-times for all JS-based application platforms, such as Electron and friends.
+*Parsing is slow because the parser has to look at and process every byte
+of the source it loads, regardless of whether that code is about to run
+or not*.
 
-JS engines already realize that parse time is a pageload bottleneck, and
-employ many tricks to reduce it.  Every major JS engine does "lazy" parsing:
-for most code, a stripped-down syntax-error-only parse is done.  Bytecode
-is not generated, and most parse information is thrown away.  This is
-done because a syntax-error-only parse is much faster than a "full" parse
-for execution.  If a function is called only late in the program, then
-doing a syntax-error-only parse early can save a lot of page-load time.
-When the function is eventually called, it needs to be re-parsed using
-the full parser.  This exemplifies the sensitivity of load-time parsing:
-browsers will even choose to parse a function twice, just in the hopes
-that the load-time can be reduced.
+Turning that around, we can restate it as: *The fastest way to parse
+something is not to parse it at all*.
+
+What's interesting is that JS engines already realize this to some degree,
+and try their best to avoid fully parsing as much code as they can get
+away with.  This technique is called lazy parsing, and all major JS engines
+employ it:  When code is first loaded, most functions are not fully parsed.
+Instead, a faster "syntax-error-only" parse is run to check for errors.
+Later on, if the function is called, it will be re-parsed with a "full"
+parser to generate bytecode for execution.
+
+This technique is used to delay heavyweight parsing until after page-load,
+on the hopes that the function is only called after the page is loaded
+(or never at all).  In total, this increases the time spent parsing the
+function if it is ever called, but can be a worthwhile trade-off for
+start-up time.
 
 Unfortunately, we've basically reached the end of the performance curve for
 optimizing the parsing of existing JS syntax.  In fact, recent syntax
 additions to the language (e.g. destructuring syntax) has added more ambiguity
 and parsing complexity.
 
-The only way to improve the parse-time of JS is to change some aspect of
-the syntax to allow the parser to load code faster.  Before we can think
-of how to change the syntax, however, we need to clearly understand why
-parsing is slow, so our new syntax actually allows for the performance
-gains we seek.
-
-## Why is parsing slow?
-
-I'll start with the conclusion we arrived at and then work on justifying it.
-
-*Parsing is slow because parsers have to look at and process every byte
-of the code they load, regardless of whether they are about to execute
-it or not*
-
-As application sizes grow, simply having to look at code before executing
-it becomes a problem.  Consider a 10MB program.  If every character of that
-10MB program needs to be processed in some way, then every nanosecond spent
-on a character of source translates to 10ms of load-time delay.
-
-This property is independent of whether the source format is binary or
-text based.  To put it somewhat obnoxiously: *the fastest way to parse
-something is not to parse it at all*.
-
-Let's take a look at some examples in practice.
+Let's take a look at some existing source formats and their load-time
+performance as compared to the work-per-byte they do when loading code.
 
 ### Java
+
+Java is historically well known for having very slow application start-up
+times.
 
 The Java spec requires heavy verification of a loaded .class file.  The
 classes, class structure, functions, function signatures, and foreign
 interface use must be verified across the class file.  Methods must have
 their bytecode verified for stack and type consistency.  Dependent
-class files may also be loaded and recursively verified as part of the
-verification of an "origin" class file.
+class files may also be loaded and recursively verified.
 
-This leads to Java programs being extremely slow to load, as initial code
-execution is impeded by constant verification of newly loaded code.  However,
-once a Java application has reached its steady state, it runs very fast.
-
-Java uses a binary bytecode format, but the heavyweight load-time requirements
-make it extremely slow to start.  Historically, even small Java programs have
-been known to take seconds to start up.
+The per-byte work of loading a Java class file is very large due to
+Java's verification requirements.
 
 ### Javascript
 
-Javascript requires much lighter verification of a loaded code than Java.
-Any syntactic errors in a file must be raised at load time, but all other
-errors are raised at runtime.
+JS requires much lighter verification of a loaded code than Java.  JS has
+no type checking, so only syntax checking is needed.
 
-No dependencies need to be pulled in, and no bytecode needs to be abstractly
-interpreted.  Types, interfaces, method calls, and field accesses do not need
-to be checked for consistency.
-
-This means that even though Javascript ships a much higher-level source
-format that's harder to parse than Java's class files, Javascript's application
+This means that even though JS ships a much higher-level source
+format that's harder to parse than Java's class files, JS's application
 load times are a fraction of Java application load times.
 
-Even with this lighter burden of verification, Javascript still has to
-check every byte of source code it loads.  To mitigage the impact of that,
-JS engines split parsing into two modes: a lightweight syntax-error-only
-parse, and a heavyweight parse-for-execution.
+The per-byte work of loading source is much lower for JS than for Java.
+
+Even with this lighter burden of verification, the fact that every byte
+of source has to be scanned is a high burden, and JS engines mitigate\
+it using the syntax-parsing technique I described earlier.
 
 ### Dart
 
-Dart deserves a bit of special mention here.  It observed the hit to
-load-times incurred by heavy load-time verification requirements, and decided
-to make all syntax errors lazy.  However, Dart stuck with a text format for
-its source.
+Google's Dart language deserves a bit of special mention here.  It observed
+the hit to load-times incurred by heavy load-time verification requirements,
+and decided to make all syntax errors lazy.
 
 The lazification of syntax errors allowed Dart to greatly reduce the cost
-of syntax-error-only parsing.  Code only needs to be scanned for a handful
+of load-time parsing.  Code only needs to be scanned for a handful
 of tokens such as brackets (for checking for consistent nesting) and strings
 and comments (because the parser needs to ignore brackets within strings and
 comments).  These checks are simple enough to be accelerated by SIMD
 data-parallel instructions.
 
-All that said, Dart still requires that all source code be scanned by a
-simple tokenizer.
+Dart's approach was to design their language syntax and semantics to
+allow the lazy "syntax-error-only" parser to run as fast as possible.
+
+The per-byte work for loading Dart is much lower than for JS.
 
 ### Native Apps
 
@@ -162,34 +136,26 @@ format) treat their input as random access.  Aside from some key tables
 describing the structure of the source, a native-code loader generally
 never looks at a part of the source until it needs to execute it.
 
+The per-byte work for loading native code is almost zero.
+
 ## Analysis
 
-There are multiple pieces of evidence pointing at the conclusion that if
-we want to speed up load-time parsing, we need to choose some format and
-semantics that allows the parser to ignore large chunks of loaded code
-until they are executed.
+The above examples justify the reduced problem statement from earlier.
+If we want to fix the parsing issue, we need to:
 
-The proposed performance theory "makes sense" in a trivial way (more code +
-having to look at every byte of code + more work per byte = longer load-times).
+1. Reduce the amount of per-byte work done for loading code that's not about to run.
+2. Preferably reduce it to zero.
 
-The usage of syntax-error-only parsing by all major JS engines points to
-an existing awareness of the load-time parsing problem.
+Our goal with Binary AST, then, is aggressive: design a source format
+that allows a parser to achieve load-time performance comparable to
+native programs, by enabling the parser to skip looking at code
+it's not about to execute.
 
-The load-time performance properties of existing source formats clearly reveal
-a relationship between load-time verification requirements and poor performance
-outcomes.
+The challenge is to do this while respecting and adhereing to the
+general ethos of the JS language, being easily accessible to
+web developers, and having a good compatibility with the existing
+JS ecosystem.
 
-The design question then becomes: how do we build a JS source format that
-lets the parser achieve the performance improvements it wants, but is still
-compatible with the existing JS ecosystem, convenient for developers to use,
-and fits the values of the web and JS in general.
-
-Our answer to that question is the set of features in the Binary JS proposal.
-It proposes a new syntax that is translate-eable to and from plaintext JS,
-and a set of core properties of the syntax needed to enable fast parsing.
-
-In subsequent articles, we'll go into each of the proposed Binary JS
-implementation features and discuss how it relates to the performance
-goals we seek.
-
-Keep reading.
+In subsequent articles, we'll address individual features in
+the Binary AST proposal, and how those features contribute to
+these goals.
