@@ -65,28 +65,34 @@ tradeoffs when they're loading and running code:
 
 ### Java
 
-The Java spec requires heavy verification of a loaded .class file.  The
-classes, class structure, functions, function signatures, and foreign
+The original Java spec required heavy verification of a loaded .class file.
+The classes, class structure, functions, function signatures, and foreign
 interface use must be verified across the class file.  Methods must have
 their bytecode verified for stack and type consistency, dependent
 class files may also be loaded and recursively verified.
 
-The per-byte work of loading a Java class file is very large due to
-Java's verification requirements. As a direct result, of this, Java is
-historically well known for having very slow application start-up
-times.
+This is a lot of work to do to load code.  Java's issues are mitigated
+by its binary format that allows parsers to process the source much faster
+than parsing plaintext source.
+
+Despite this, early Java's verification requirements were still too heavy
+(in particular the stack verification for methods), and Java updated
+its requirements to allow for a much lighterweight verification regime.
 
 ### Javascript
 
 With no type checking, JS requires much lighter verification of loaded
 code than Java. Only syntax checking is needed, so even though JS ships
 a much higher-level source format that's harder to parse than Java's class
-files, per-byte work of loading source is much lower and conseqently
-JS application load times are a fraction of Java application load times.
+files, per-byte work of loading source is much lower.
 
-Even with this lighter burden of verification, the fact that every byte
-of source has to be scanned is a high burden, and JS engines mitigate
-it using the syntax-parsing technique I described earlier.
+However, JS's text syntax forces the parser to tokenize the source (split it
+up into atomic "words"), and then re-construct the logical structure of
+the code.  This is much more time consuming than parsing binary structures.
+
+Even with the lighter burden of verification, parsing is enough of a bottleneck
+for JS load times that all engines use the syntax-error-only parsing technique
+to optimize it.
 
 ### Native Apps
 
@@ -111,7 +117,9 @@ format) treat their input as random access.  Aside from some key tables
 describing the structure of the source, a native-code loader generally
 never looks at a part of the source until it needs to execute it.
 
-The per-byte work for loading native code is almost zero.
+The per-byte work for loading native code is almost zero, because a
+native-code loader can ignore all loaded code completely until it is
+run.
 
 ### Dart
 
@@ -134,7 +142,7 @@ the upshot of this is that per-byte work for loading Dart is much lower than for
 
 Reflecting on above examples drove us to reconsider our problem statement: the
 best way for us to "fix" the parsing issue is to eliminate the need for
-parsing completely. 
+parsing code entirely, unless that code is about to run. 
 
 Our goal with Binary AST, then, is aggressive: design a source format
 that allows a parser to achieve load-time performance comparable to
@@ -146,13 +154,18 @@ general ethos of the JS language, being easily accessible to
 web developers, and having a good compatibility with the existing
 JS ecosystem.
 
+This set of constraints has led to the design decisions in Binary AST.
+With the goal of eliminating unnecessary parsing, we identified and
+addressed the aspects of plaintext JS that prevent that goal.
+
+The design we arrived at is not so much a "new syntax" as it is
+a pre-processed re-packaging of the information in a JS source file.
+The Binary AST format can be converted to and from plaintext JS,
+and includes no information that plaintext JS doesn't.
+
 In subsequent articles, we'll address individual features in
 the Binary AST proposal, and how those features contribute to
-these goals.
+the goals we have set out above.
 
 
 (1) - https://lists.freebsd.org/pipermail/freebsd-current/2010-August/019310.html] 
-
-
-
-
