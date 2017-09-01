@@ -1,7 +1,7 @@
 
 # Binary AST - Motivations and Design - Part 1
 
-"The key to making programs fast is to make them do practically nothing."
+_"The key to making programs fast is to make them do practically nothing."_
                       - Mike Haertel, creator of GNU Grep. (1)
 
 Binary AST - "Binary Abstract Syntax Tree" - is Mozilla's proposal for specifying 
@@ -24,30 +24,26 @@ than a JS source file, it's simply a repackaging of the same syntactic data.
 4. We have prototyped an implementation that shows incredible parse-time improvements.
 
 As we work towards a proper in-browser implementation, we'd like to share the reasoning
-and motivations behind the project requirements and the design choices we've made
-while hammering out the preliminary specification and building the first prototype. 
+and motivations behind the project requirements and the design choices we've made.
 
 
 ## The Problem
 
-David' opening newsletter post covers the problem in detail:
+David's opening newsletter post covers the problem in detail:
 [https://yoric.github.io/post/binary-ast-newsletter-1].
 
 ... but in short: the web uses a lot of Javascript, and every part of downloading,
-parsing, compiling, optimizing and executing that Javascript is time-consuming, 
-and substantial improvements to any of them will result in a much better Web
-experience for everybody.
+parsing, compiling, optimizing and executing that Javascript is time-consuming.
+While JS engines have made great progress in speeding up many of these areas, parse
+times have largely hit a wall.
 
 On a modern machine, browsers spend more than 500ms parsing the Facebook home
-page's JS, which loads 7MB of uncompressed JS.  Other top sites like LinkedIn
-are comparable.  This is a significant amount of user time spent parsing, and
-a lot of that time is simply a consequence of how the source format is organized.
+page's 7MB of uncompressed JS.  Other top sites like LinkedIn are comparable.
+With that in mind, our goal was to design a source format that allows for extremely
+fast parsing.
 
-With that in mind, our goal was to design a source format that allows for fast
-parsing.
-
-First, we should understand why JS parsing is currently slow. The "What if we
-just made the parser faster?" section in David's article details a number
+First, we should understand why JS parsing is currently slow. The _"What if we
+just made the parser faster?"_ section in David's article details a number
 of reasons, but there's a fundamental, unavoidable issue underneath all of them:
 
 *Parsing is slow because the parser has to look at and process every byte
@@ -76,10 +72,6 @@ and parsing complexity, resulting in slower parsing times overall.
 To get some insight, we can look at how different platforms do program
 encoding, and the properties that arise from their choices.
 
-Different languages and source formats have tried to address the fundamental
-problem in different ways, making different work-per-byte and load-time
-performance tradeoffs.
-
 We'll examine Java, JS, Native Binaries, and Dart.
 
 ### Java
@@ -87,7 +79,7 @@ We'll examine Java, JS, Native Binaries, and Dart.
 The original Java spec required heavy verification of a loaded class file.
 The classes, class structure, functions, function signatures, and foreign
 interface use must be verified across the class file.  Methods must have
-their bytecode verified for stack and type consistency, dependent
+their bytecode verified for stack and type consistency, and dependent
 class files may also be loaded and recursively verified.
 
 Java's issues are mitigated by its binary format that allows parsers to
@@ -105,7 +97,7 @@ its requirements to allow for a much lighterweight verification regime.
 With no type checking, JS requires much lighter verification of loaded
 code than Java. Only syntax checking is needed, so even though JS ships
 a much higher-level source format that's harder to parse than Java's class
-files, per-byte work of loading source is much lower.
+files, the per-byte work of verifying the source is much lower.
 
 However, JS's text syntax forces the parser to tokenize the source (split it
 up into atomic "words"), and then re-construct, in memory, the logical structure
@@ -122,16 +114,13 @@ Native binaries load and start executing almost instantly.
 
 Not coincidentally, native executable formats specify almost no verification
 of the executable data.  Load-time work includes parsing an executable
-file's object tables and doing initial linking, but native program loaders
+file's tables and doing initial linking, but native program loaders
 don't scan every byte of an executable doing some sort of byte-level
 verification of the program.  If the program is malformed, that malformation
 will (typically) present itself as a runtime crash if and when it is hit.
 
 This lets native programs load instantly, even though the native code format
-is typically much less efficient than a source representation (for example,
-a call `f(1,2)` in source code takes 6 bytes to represent, but is larger
-in machine code.  Of course, the fact that native code is directly decoded
-by the CPU hardware doesn't hurt.
+is typically much less efficient than a source representation.
 
 It's important to note that native code formats (e.g. the ELF object file
 format) treat their input as random access.  Aside from some key tables
@@ -160,11 +149,11 @@ for JS.
 
 That said, Dart still used only plaintext source format, and was thus subject to
 the same scanning requirements as all other plaintext formats: every byte of
-the source must be scanned at runtime.
+the source must be scanned at load time.
 
 ### Analysis
 
-Reflecting on above examples drove us to reconsider our problem statement: the
+Reflecting on above examples drives us to reconsider our problem statement: the
 best way for us to "fix" the parsing issue is to eliminate the need for
 parsing code entirely, unless that code is about to run. 
 
@@ -188,7 +177,7 @@ The Binary AST format can be converted to and from plaintext JS,
 and includes no information that plaintext JS doesn't.
 
 In subsequent articles, we'll address individual features in
-the Binary AST proposal, and how those features contribute to
+the Binary AST proposal, and how those features enable to
 the goals we have set out above.
 
 ## Binary Encoded Formats
@@ -226,8 +215,9 @@ we know to terminate parsing), and a move.
 
 In a binary format, we might use the 'varuint' representation for integers.
 This is encoded by using 7 bits in each byte to encode the number, with one
-bit indicating whether more bytes follow.  Some naive pseudo-assembly to
-parse this might be:
+bit indicating whether more bytes follow.  An encoding of '126' in varuint
+format would simply be the byte value `0x7e` (126) in binary.  Some naive
+pseudo-assembly to parse this might be:
 
 ```
   mov r0, 0                 # initialize result r0 to 0
@@ -249,16 +239,18 @@ this code for that input would run the loop exactly once, and perform 4
 arithmetic operations, a single branch, a single load, and a move.
 
 These are both slightly naive implementations of the approach, but they
-serve to demonstrate the basic point.  If we compare the execution time for
-parsing the former vs latter, we see the following:
+serve to demonstrate the basic point.  If we compare the kinds and number
+of instructions executed for parsing the former vs latter, we see the
+following:
 
 ```
-                    Text            Binary
-Fast Arithmetic      15               4
-Multiplies           3                0
-Branches             7                1
-Loads                4                1
-Moves                1                1
+Instruction Type    Text Format     Binary Format
+-------------------------------------------------
+Fast Arithmetic         15               4
+Multiplies              3                0
+Branches                7                1
+Loads                   4                1
+Moves                   1                1
 ```
 
 The binary encoding reduces the cheap arithmetic operations by more than 3x.
@@ -271,7 +263,7 @@ specific hardware architecture, but by in large parsing the binary encoding
 will be at around 4x faster than the text encoding.
 
 This property applies in general to most binary-encoded data.  It's structured
-much more closely to the machine's native representations of things, and thus
+much more closely to the machine's native representations of data, and thus
 is much faster for a program to convert into a usable internal form.
 
 ### Reason 2
