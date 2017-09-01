@@ -1,5 +1,5 @@
 
-# Binary AST - Motivations and Design - Part 1
+# Binary AST - Motivations and Design Decisions - Part 1
 
 _"The key to making programs fast is to make them do practically nothing."_
                       - Mike Haertel, creator of GNU Grep. (1)
@@ -13,6 +13,10 @@ It has recently cleared Stage 1 of the TC39 standards process, and while the
 final byte-level format has yet to be fully nailed down, we are confident
 that the final implementation will reflect the impressive performance
 improvements promised by the prototype.
+
+As we work towards that, we'd like to share our reasoning and motivations 
+behind the project requirements and the design choices we've made while
+hammering out the preliminary specification and building the first prototype. 
 
 To clarify some points early on:
 
@@ -34,8 +38,9 @@ David's opening newsletter post covers the problem in detail:
 
 ... but in short: the web uses a lot of Javascript, and every part of downloading,
 parsing, compiling, optimizing and executing that Javascript is time-consuming.
-While JS engines have made great progress in speeding up many of these areas, parse
-times have largely hit a wall.
+While the world has made remarkable progress in the last five years on Javascript
+compilation, optimization and execution, we haven't seen the same progress on the parsing
+front.
 
 On a modern machine, browsers spend more than 500ms parsing the Facebook home
 page's 7MB of uncompressed JS.  Other top sites like LinkedIn are comparable.
@@ -72,7 +77,7 @@ and parsing complexity, resulting in slower parsing times overall.
 To get some insight, we can look at how different platforms do program
 encoding, and the properties that arise from their choices.
 
-We'll examine Java, JS, Native Binaries, and Dart.
+We'll examine Java, JS, native program binaries, and Dart.
 
 ### Java
 
@@ -88,9 +93,10 @@ formats are generally faster to parse than text representations of the
 same content (see the `Binary Encoded Formats` section below for a quick
 treatise on why).
 
-Despite this, early Java's verification requirements were still too heavy
-(in particular the stack verification for methods), and Java updated
-its requirements to allow for a much lighterweight verification regime.
+This is an extremely cautious approach; the benefit is a very high degree
+of confidence in the consistency and integrity of your execution environment,
+but it comes at the cost of front-loading a lot of heavy work before you can run
+a single instruction. 
 
 ### Javascript
 
@@ -99,33 +105,40 @@ code than Java. Only syntax checking is needed, so even though JS ships
 a much higher-level source format that's harder to parse than Java's class
 files, the per-byte work of verifying the source is much lower.
 
-However, JS's text syntax forces the parser to tokenize the source (split it
-up into atomic "words"), and then re-construct, in memory, the logical structure
-of the source code.  This is much more time consuming than parsing binary structures.
+The tradeoff is that Javascript's text syntax forces parsers to tokenize the source
+(split it up into atomic "words" before further decisions can take place) and then
+re-construct the logical structure of the code. This is much more time consuming
+than parsing binary structures.
 
-Even with the lighter burden of verification, parsing is enough of a bottleneck
-for JS load times that all engines use the syntax-error-only parsing technique
-to optimize it.
+The result is that even with the lighter burden of verification, parsing is enough
+of a bottleneck for Javascript load times that all engines use the syntax-error-only
+parsing technique to optimize it on first pass, and incurring additional costs later
+in the execution process.
 
 ### Native Apps
 
 Native apps are the obvious extreme when it comes to start-up performance.
-Native binaries load and start executing almost instantly.
+Native binaries load and start executing almost instantly, and not coincidentally,
+native executable formats specify almost no verification of the executable data.
 
-Not coincidentally, native executable formats specify almost no verification
-of the executable data.  Load-time work includes parsing an executable
-file's tables and doing initial linking, but native program loaders
-don't scan every byte of an executable doing some sort of byte-level
-verification of the program.  If the program is malformed, that malformation
-will (typically) present itself as a runtime crash if and when it is hit.
-
-This lets native programs load instantly, even though the native code format
-is typically much less efficient than a source representation.
+In this context load-time work involves parsing an executable file's object
+tables and doing initial linking, but (outside of cryptographic verification)
+native program loaders will avoid the high cost of doing byte-level
+verification of executables simply by not doing any verification at all. 
+Consequently, if a program is malformed the best-case outcome is that it
+will only crash rather than doing something insane or malicious.
 
 It's important to note that native code formats (e.g. the ELF object file
 format) treat their input as random access.  Aside from some key tables
 describing the structure of the source, a native-code loader generally
-never looks at a part of the source until it needs to execute it.
+never looks at a part of the source until it needs to execute it. 
+
+The benefits here are obvious: this approach lets native programs load
+and begin execution instantly and per-byte work for loading native code
+is almost zero, because a native-code loader can ignore all loaded code
+completely until it is run. Even though the native code format is typically
+much less efficient than a source representation; for example, a call `f(1,2)` 
+in source code takes 6 bytes to represent, but is much larger in machine code.
 
 The per-byte work for loading native code is almost zero.
 
@@ -133,7 +146,7 @@ The per-byte work for loading native code is almost zero.
 
 Google's Dart language deserves a special mention here: Google's engineers
 noted the hit to load-times incurred by heavy load-time verification, and
-decided to make all syntax errors lazy.
+decided to make all syntax errors lazy as well.
 
 The lazification of syntax errors allowed Dart to greatly reduce the cost
 of load-time parsing.  Code only needs to be scanned for a handful
@@ -157,24 +170,27 @@ Reflecting on above examples drives us to reconsider our problem statement: the
 best way for us to "fix" the parsing issue is to eliminate the need for
 parsing code entirely, unless that code is about to run. 
 
+
 Our goal with Binary AST, then, is simple but aggressive: design a source format
 that allows a parser to achieve load-time performance as close as possible to
 native programs, by enabling the parser to skip looking at code
 it's not about to execute.
 
 The challenge is to do this while respecting and adhereing to the
-general ethos of the JS language, being easily accessible to
+general ethos of the Javascript language, being easily accessible to
 web developers, and having a good compatibility with the existing
-JS ecosystem.
+Javascript ecosystem.
 
 This set of constraints has led to the design decisions in Binary AST.
 With the goal of eliminating unnecessary parsing, we identified and
-addressed the aspects of plaintext JS that prevent that goal.
+addressed the aspects of plaintext Javascript that prevent that goal.
 
 The design we arrived at is not so much a "new syntax" as it is
-a pre-processed re-packaging of the information in a JS source file.
-The Binary AST format can be converted to and from plaintext JS,
-and includes no information that plaintext JS doesn't.
+a pre-processed re-packaging of the information in a Javascript source file.
+The Binary AST format can be converted to and from plaintext Javascript,
+including no information that plaintext Javascript doesn't, and we intend
+to ship bidirectional tooling alongside the final product to make
+taking advantage of this format as easy as possible.
 
 In subsequent articles, we'll address individual features in
 the Binary AST proposal, and how those features enable to
