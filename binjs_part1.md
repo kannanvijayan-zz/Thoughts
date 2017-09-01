@@ -14,10 +14,6 @@ final byte-level format has yet to be fully nailed down, we are confident
 that the final implementation will reflect the impressive performance
 improvements promised by the prototype.
 
-As we work towards that, we'd like to share our reasoning and motivations 
-behind the project requirements and the design choices we've made while
-hammering out the preliminary specification and building the first prototype. 
-
 To clarify some points early on:
 
 1. It is not proposing a bytecode for JS.
@@ -27,7 +23,7 @@ the same semantics.
 than a JS source file, it's simply a repackaging of the same syntactic data.
 4. We have prototyped an implementation that shows incredible parse-time improvements.
 
-As we work towards a proper in-browser implementation, we'd like to share the reasoning
+As we work towards a production implementation, we'd like to share our reasoning
 and motivations behind the project requirements and the design choices we've made.
 
 
@@ -36,9 +32,9 @@ and motivations behind the project requirements and the design choices we've mad
 David's opening newsletter post covers the problem in detail:
 [https://yoric.github.io/post/binary-ast-newsletter-1].
 
-... but in short: the web uses a lot of Javascript, and every part of downloading,
-parsing, compiling, optimizing and executing that Javascript is time-consuming.
-While the world has made remarkable progress in the last five years on Javascript
+... but in short: the web uses a lot of JS, and every part of downloading,
+parsing, compiling, optimizing and executing that JS is time-consuming.
+While the world has made remarkable progress in the last five years on JS
 compilation, optimization and execution, we haven't seen the same progress on the parsing
 front.
 
@@ -49,7 +45,7 @@ fast parsing.
 
 First, we should understand why JS parsing is currently slow. The _"What if we
 just made the parser faster?"_ section in David's article details a number
-of reasons, but there's a fundamental, unavoidable issue underneath all of them:
+of reasons, but there's a fundamental, unavoidable issue underpinning all of them:
 
 *Parsing is slow because the parser has to look at and process every byte
 of the source it loads, regardless of whether that code is about to run
@@ -94,26 +90,25 @@ same content (see the `Binary Encoded Formats` section below for a quick
 treatise on why).
 
 This is an extremely cautious approach; the benefit is a very high degree
-of confidence in the consistency and integrity of your execution environment,
+of confidence in the consistency and integrity of the execution environment,
 but it comes at the cost of front-loading a lot of heavy work before you can run
 a single instruction. 
 
-### Javascript
+### JS
 
 With no type checking, JS requires much lighter verification of loaded
 code than Java. Only syntax checking is needed, so even though JS ships
 a much higher-level source format that's harder to parse than Java's class
 files, the per-byte work of verifying the source is much lower.
 
-The tradeoff is that Javascript's text syntax forces parsers to tokenize the source
+The tradeoff is that JS's text syntax forces parsers to tokenize the source
 (split it up into atomic "words" before further decisions can take place) and then
 re-construct the logical structure of the code. This is much more time consuming
 than parsing binary structures.
 
 The result is that even with the lighter burden of verification, parsing is enough
-of a bottleneck for Javascript load times that all engines use the syntax-error-only
-parsing technique to optimize it on first pass, and incurring additional costs later
-in the execution process.
+of a bottleneck for JS load times that all engines use the syntax-error-only
+parsing technique to optimize it on first pass.
 
 ### Native Apps
 
@@ -121,8 +116,8 @@ Native apps are the obvious extreme when it comes to start-up performance.
 Native binaries load and start executing almost instantly, and not coincidentally,
 native executable formats specify almost no verification of the executable data.
 
-In this context load-time work involves parsing an executable file's object
-tables and doing initial linking, but (outside of cryptographic verification)
+In this context load-time work involves parsing an executable file's section 
+tables and doing initial linking, but
 native program loaders will avoid the high cost of doing byte-level
 verification of executables simply by not doing any verification at all. 
 Consequently, if a program is malformed the best-case outcome is that it
@@ -136,9 +131,8 @@ never looks at a part of the source until it needs to execute it.
 The benefits here are obvious: this approach lets native programs load
 and begin execution instantly and per-byte work for loading native code
 is almost zero, because a native-code loader can ignore all loaded code
-completely until it is run. Even though the native code format is typically
-much less efficient than a source representation; for example, a call `f(1,2)` 
-in source code takes 6 bytes to represent, but is much larger in machine code.
+completely until it is run. This is despite the fact native code formats
+are typically much less efficient than a source representation.
 
 The per-byte work for loading native code is almost zero.
 
@@ -150,17 +144,17 @@ decided to make all syntax errors lazy as well.
 
 The lazification of syntax errors allowed Dart to greatly reduce the cost
 of load-time parsing.  Code only needs to be scanned for a handful
-of tokens such as brackets (for checking for consistent nesting) and strings
-and comments (because the parser needs to ignore brackets within strings and
-comments).  These checks are simple enough to be accelerated by SIMD
-data-parallel instructions.
+of tokens such as brackets (for checking for consistent nesting and finding
+the boundaries of function bodies) and strings and comments (because the parser
+needs to ignore brackets within strings and comments).  These checks are simple
+enough to be accelerated by SIMD data-parallel instructions.
 
 Dart's approach was to design their language syntax and semantics to
 allow the lazy "syntax-error-only" parser to run as fast as possible, and
 the upshot of this is that per-byte work for loading Dart is much lower than
 for JS.
 
-That said, Dart still used only plaintext source format, and was thus subject to
+That said, Dart still used a plaintext source format, and was thus subject to
 the same scanning requirements as all other plaintext formats: every byte of
 the source must be scanned at load time.
 
@@ -177,18 +171,18 @@ native programs, by enabling the parser to skip looking at code
 it's not about to execute.
 
 The challenge is to do this while respecting and adhereing to the
-general ethos of the Javascript language, being easily accessible to
+general ethos of the JS language, being easily accessible to
 web developers, and having a good compatibility with the existing
-Javascript ecosystem.
+JS ecosystem.
 
 This set of constraints has led to the design decisions in Binary AST.
 With the goal of eliminating unnecessary parsing, we identified and
-addressed the aspects of plaintext Javascript that prevent that goal.
+addressed the aspects of plaintext JS that prevent that goal.
 
 The design we arrived at is not so much a "new syntax" as it is
-a pre-processed re-packaging of the information in a Javascript source file.
-The Binary AST format can be converted to and from plaintext Javascript,
-including no information that plaintext Javascript doesn't, and we intend
+a pre-processed re-packaging of the information in a JS source file.
+The Binary AST format can be converted to and from plaintext JS,
+including no information that plaintext JS doesn't, and we intend
 to ship bidirectional tooling alongside the final product to make
 taking advantage of this format as easy as possible.
 
@@ -219,7 +213,7 @@ loop:
   mul r0, 10                # scale r0 up by 10 [EXPENSIVE]
   sub r1, '0'               # map '0'=>0, '1'=>1, etc.
   add r0, r1                # add the digit to the result
-  add srcPtr, 1             # increment counter
+  add srcPtr, 1             # increment text position.
   goto loop
 end:
 ```
@@ -232,8 +226,8 @@ we know to terminate parsing), and a move.
 In a binary format, we might use the 'varuint' representation for integers.
 This is encoded by using 7 bits in each byte to encode the number, with one
 bit indicating whether more bytes follow.  An encoding of '126' in varuint
-format would simply be the byte value `0x7e` (126) in binary.  Some naive
-pseudo-assembly to parse this might be:
+format might be `126|0x80 == 0xfe` in binary.  Some pseudo-assembly to parse
+this might be:
 
 ```
   mov r0, 0                 # initialize result r0 to 0
@@ -243,6 +237,7 @@ loop:
   ifnz last                 # branch to "last" if stop bit = 1
   shl r0, 7                 # |
   or r0, r1                 # | add the byte to the result
+  add srcPtr, 1             # increment text position.
   goto loop
 last:
   and r1, 0x7f              # clear the stop bit from the byte.
@@ -250,7 +245,7 @@ last:
   or r0, r1                 # | add the byte to the result
 ```
 
-The encoding for 126 in this format is `126|0x80 = 0xfe`. A full execution of
+A full execution of
 this code for that input would run the loop exactly once, and perform 4
 arithmetic operations, a single branch, a single load, and a move.
 
@@ -262,7 +257,7 @@ following:
 ```
 Instruction Type    Text Format     Binary Format
 -------------------------------------------------
-Fast Arithmetic         15               4
+Fast Arithmetic         15               5
 Multiplies              3                0
 Branches                7                1
 Loads                   4                1
@@ -270,13 +265,13 @@ Moves                   1                1
 ```
 
 The binary encoding reduces the cheap arithmetic operations by more than 3x.
-It eliminates multiplies entirely and converts them into left-shifts.
-Multiplies take around 3x the time of "simple" arithmetic like shifts, compares,
-adds, and bit-operations.
+It drops branches, by 7x, and memory loads by 4x.  It eliminates multiplies entirely
+and converts them into left-shifts.  Multiplies take around 3x the time of "simple"
+arithmetic like shifts, compares, adds, and bit-operations.
 
 The specific differential in operations executed is going to depend on the
-specific hardware architecture, but by in large parsing the binary encoding
-will be at around 4x faster than the text encoding.
+specific hardware architecture, but this is an order of magnitude difference
+in execution cost.
 
 This property applies in general to most binary-encoded data.  It's structured
 much more closely to the machine's native representations of data, and thus
@@ -284,14 +279,14 @@ is much faster for a program to convert into a usable internal form.
 
 ### Reason 2
 
-Binary formats are expected to be produced by programs, not people - and
-there's no expectation that a
-person should be able to come and directly modify that binary encoding
-after the fact.  Instead of updating the binary encoding, we update
+Binary formats are expected to be produced by programs, not people.  
+There's no expectation that a
+developer should be able to directly modify that binary encoding
+after it is generated.  Instead of updating the binary encoding, we update
 the source and re-translate to binary.  This means binary encodings
-are "atomically static" (for lack of a better phrase).  Every part of
-a binary encoding can assume that the contents of the rest of the
-encoding are exactly the same as when it was originally produced.
+are "static".  Every part of a binary encoding can assume that the contents
+of the rest of the encoding are exactly the same as when it was originally
+produced.
 
 This property allows binary formats to embed "pointers" - direct
 references from one part of the file to another, which allows
@@ -308,8 +303,8 @@ a much more machine-friendly structuring of information.
 
 ## Why Not WebAssembly
 
-One of the common responses we've heard so far about Binary AST is to ask
-why WebAssembly doesn't fit the role - in one of two ways: either to ask
+One of the common questions we've seen so far is why WebAssembly doesn't
+fit the role - in one of two ways: either to ask
 developers to use wasm instead, or to translate JS code to wasm to ship.
 
 Neither of these options are a viable solution to the problems we face.
@@ -339,7 +334,7 @@ becomes an even bigger issue, and the implementation needs to wait until
 Wasm adds primitives to support garbage-collecting VMs.
 
 For better or worse, the web has a favoured family of languages, and that
-family is Javascript and any language that cleanly maps to it.  It is imperative
+family is JS and any language that cleanly maps to it.  It is imperative
 that we ensure that the most widely used language on the web is kept fast
 and performant for the hundreds of millions of users that it serves every
 day.
@@ -352,16 +347,16 @@ promise to improve parse times, and even more significant gains from a format
 that allows the parser to "skip around".
 
 David Teller implemented a prototype version of our ideas on a reduced subset
-of Javascript, and was able to produce an 80% performance improvement in
-parse times, with no loss in representational efficiency as compared to minified
-JS.
+of JS, and was able to produce an 80% performance improvement in
+parse times, with no loss in representational efficiency (size of file) compared
+to minified JS.
 
 On the basis of those results, we proposed and obtained Stage 1 clearance for
-the feature in TC39.  We are currently in the process of working to implement
+the feature in TC39.  We are currently in the process of working on 
 a proper implementation that demonstrates these gains within a browser environment.
 
 Please follow along as we further discuss the design choices of Binary AST in
 future articles.
 
 
-(1) - https://lists.freebsd.org/pipermail/freebsd-current/2010-August/019310.html] 
+(1) - https://lists.freebsd.org/pipermail/freebsd-current/2010-August/019310.html
