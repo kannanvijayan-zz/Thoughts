@@ -1,8 +1,7 @@
 
 # Binary AST - Motivations and Design Decisions - Part 1
 
-- Kannan Vijayan
-- Mike Hoye
+- Kannan Vijayan, Mike Hoye
 
 _"The key to making programs fast is to make them do practically nothing."_
                       - Mike Haertel, creator of GNU Grep. (1)
