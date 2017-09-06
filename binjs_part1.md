@@ -73,6 +73,36 @@ To get a sense of why we've decided on the approach we took with Binary AST
 it's worth a quick overview of how different platforms do program encoding, 
 and the advantages and tradeoffs of each.
 
+### Native Apps
+
+Native apps are the obvious extreme when it comes to start-up performance.
+Native binaries load and start executing almost instantly, and not coincidentally
+native executable formats specify almost no verification of the executable data.
+
+In this context load-time work involves parsing an executable file's section 
+tables and doing initial linking, but
+native program loaders will avoid the high cost of doing byte-level
+verification of executables simply by not doing any verification at all. 
+Consequently if a program is malformed the best-case outcome is that it
+only crashes instead of doing something malicious or insane, but the good
+news is that "do nothing" is something all computers can do really,
+really fast.
+
+It's important to note that native code formats (e.g. the ELF object file
+format) treat their input as random access.  Aside from some key tables
+describing the structure of the source, a native-code loader generally
+never looks at a part of the source until it needs to execute it. 
+
+The benefits here are obvious: this approach lets native programs load
+and begin execution instantly and per-byte work for loading native code
+is almost zero, because a native-code loader can ignore all loaded code
+completely until it is run. This is despite the fact native code formats
+are typically much less efficient than a source representation.
+
+With all that in mind, the most important characteristic of native code
+that we wanted to bring to Binary AST is that the per-byte work involved 
+in loading and parsing code is very close to zero.
+
 ### Java
 
 The original Java spec required heavy verification of a loaded class file.
@@ -105,36 +135,6 @@ than parsing binary structures.
 The result is that even with the lighter verification burden, parsing is enough
 of a bottleneck for JS load times that all major JS engines use the syntax-error-only
 parsing technique to optimize it on first pass.
-
-### Native Apps
-
-Native apps are the obvious extreme when it comes to start-up performance.
-Native binaries load and start executing almost instantly, and not coincidentally
-native executable formats specify almost no verification of the executable data.
-
-In this context load-time work involves parsing an executable file's section 
-tables and doing initial linking, but
-native program loaders will avoid the high cost of doing byte-level
-verification of executables simply by not doing any verification at all. 
-Consequently if a program is malformed the best-case outcome is that it
-only crashes instead of doing something malicious or insane, but the good
-news is that "do nothing" is something all computers can do really,
-really fast.
-
-It's important to note that native code formats (e.g. the ELF object file
-format) treat their input as random access.  Aside from some key tables
-describing the structure of the source, a native-code loader generally
-never looks at a part of the source until it needs to execute it. 
-
-The benefits here are obvious: this approach lets native programs load
-and begin execution instantly and per-byte work for loading native code
-is almost zero, because a native-code loader can ignore all loaded code
-completely until it is run. This is despite the fact native code formats
-are typically much less efficient than a source representation.
-
-With all that in mind, the most important characteristic of native code
-that we wanted to bring to Binary AST is that the per-byte work involved 
-in loading and parsing code is very close to zero.
 
 ### Dart
 
@@ -174,7 +174,9 @@ it's not about to execute.
 The challenge is to do this while respecting and adhereing to the
 general ethos of the JS language, being easily accessible to
 web developers, and having a good compatibility with the existing
-JS ecosystem.
+JS ecosystem.  We'd like developers to have the same access to original source
+and symbolicated exception stacks that they enjoy with plaintext
+JS.
 
 This set of constraints has led to the design decisions in Binary AST.
 With the goal of eliminating unnecessary parsing, we identified and
