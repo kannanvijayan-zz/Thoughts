@@ -20,8 +20,8 @@ Before we get into the implementation details, however, we'd like to put some
 common concerns about Binary AST to rest, most importantly that Binary AST is
 not a new executable format or "bytecode for JS". It is a very efficient 
 repackaging of the same syntactic data but by design a Binary AST file 
-carries no more or less information than its JS source file, can be converted
-to and from valid JS source code with identical semantics.
+carries no more or less information than its JS source file, and can be
+converted to and from valid JS source code with identical semantics.
 
 As we work towards a production implementation, we'd like to share our reasoning
 and motivations behind the project requirements and the design choices we've made.
@@ -52,23 +52,23 @@ of reasons, but there's a fundamental, unavoidable issue underpinning all of the
 of the source it loads, regardless of whether that code is about to run
 or not*.
 
-What's interesting is that JS engines already realize this to some degree,
+What's interesting is that JS engines already realize this to some degree
 and try their best to avoid fully parsing as much code as they can get
-away with.  This technique is called lazy parsing, and all major JS engines
+away with.  This technique is called lazy parsing and all major JS engines
 employ it. When code is first loaded, most functions are not fully parsed.
-Instead, a faster "syntax-error-only" parse is run to check for errors.
+Instead a faster "syntax-error-only" parse is run to check for errors.
 Later on, if the function is called, it will be re-parsed with a "full"
 parser to generate bytecode for execution.
 
-This technique delays heavyweight parsing until after page-load,
+This technique delays heavyweight parsing until after page-load
 on the hopes that the function is only called after page-load is finished
-(or better yet, never).  This increases the total time spent parsing the
-function (if it is ever called), but can be a worthwhile trade-off for
+(or better yet never).  This increases the total time spent parsing the
+function if it is ever called, but can be a worthwhile trade-off for
 the improvement in start-up time.
 
 Unfortunately we've basically reached the far end of the performance curve for
 optimizing the parsing of existing JS syntax.  Worse, recent syntax
-additions to the language (e.g. destructuring syntax) has added more ambiguity
+additions to the language, such as [destructuring syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment), has added more ambiguity
 and parsing complexity, resulting in slower parsing times overall.
 
 To get a sense of why we've decided on the approach we took with Binary AST
@@ -98,8 +98,7 @@ never looks at a part of the source until it needs to execute it.
 The benefits here are obvious: this approach lets native programs load
 and begin execution instantly and per-byte work for loading native code
 is almost zero, because a native-code loader can ignore all loaded code
-completely until it is run. This is despite the fact native code formats
-are typically much less efficient than a source representation.
+completely until it is run.
 
 With all that in mind, the most important characteristic of native code
 that we wanted to bring to Binary AST is that the per-byte work involved 
@@ -113,9 +112,11 @@ interface use must be verified across the class file.  Methods must have
 their bytecode verified for stack and type consistency and dependent
 class files may also be loaded and recursively verified.
 
+This work is mitigated somewhat by Java's use of a binary classfile format.
+
 Binary formats are generally much faster to parse than text representations of the same 
 content; see the `Binary Encoded Formats` section below for a quick treatise on why. 
-While Java takes advantage of a binary bytecode format to quickly parse and
+While Java takes advantage of a binary bytecode format to parse and
 process the source much faster than it could plaintext code, Java's overall approach
 is both cautious and very expensive. You end up with a very high degree
 of confidence in the consistency and integrity of the execution environment,
@@ -136,12 +137,12 @@ than parsing binary structures.
 
 The result is that even with the lighter verification burden, parsing is enough
 of a bottleneck for JS load times that all major JS engines use the syntax-error-only
-parsing technique to optimize it on first pass.
+parsing technique to mitigate it on first load.
 
 ### Dart
 
 Google's Dart language deserves a special mention here: Google's engineers
-noted the hit to load-times incurred by heavy load-time verification, and
+noted the hit to load-times incurred by heavy load-time verification and
 decided to make all syntax errors lazy as well.
 
 The lazification of syntax errors allowed Dart to greatly reduce the cost
@@ -166,9 +167,9 @@ efficient as possible is an extremely important one.
 
 Reflecting on above examples drove us to reconsider our problem statement: the
 best way for us to "fix" the parsing issue is to eliminate the need for
-parsing code entirely, unless that code is about to run. 
+parsing code entirely unless that code is about to run. 
 
-Our goal with Binary AST, then, is simple but aggressive: design a source format
+Our goal with Binary AST then, is simple but aggressive: design a source format
 that allows a parser to achieve load-time performance as close as possible to
 native programs, by enabling the parser to skip looking at code
 it's not about to execute.
@@ -346,16 +347,15 @@ is much faster for a program to convert into a usable internal form.
 
 ### Reason 2
 
-Binary formats are expected to be produced by programs, not people.  
-There's no expectation that a
-developer should be able to directly modify that binary encoding
+Binary formats are expected to be produced by programs, not people.  There's no
+expectation that a developer should be able to directly modify that binary encoding
 after it is generated.  Instead of updating the binary encoding, we update
 the source and re-translate to binary.  This means binary encodings
 are "static".  Every part of a binary encoding can assume that the contents
 of the rest of the encoding are exactly the same as when it was originally
 produced.
 
-This property allows binary formats to embed "pointers" - direct
+This property allows binary formats to embed direct
 references from one part of the file to another, which allows
 the building of complex, directly navigable data structures in
 the encoded text.
@@ -367,5 +367,3 @@ must be scanned linearly, and there's no jumping around allowed.
 
 This ability to embed "pointers" in the encoding also allows for
 a much more machine-friendly structuring of information.
-
-
