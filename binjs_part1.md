@@ -115,7 +115,7 @@ class files may also be loaded and recursively verified.
 This work is mitigated somewhat by Java's use of a binary classfile format.
 
 Binary formats are generally much faster to parse than text representations of the same 
-content; see the `Binary Encoded Formats` section below for a quick treatise on why. 
+content; see the `The Performance Binary Encoded Formats` section below for a quick treatise on why. 
 While Java takes advantage of a binary bytecode format to parse and
 process the source much faster than it could plaintext code, Java's overall approach
 is both cautious and very expensive. You end up with a very high degree
